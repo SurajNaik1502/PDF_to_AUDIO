@@ -1,11 +1,21 @@
 from flask import Flask, request, render_template, send_file
 import os
 import PyPDF2
-import pyttsx3
 from gtts import gTTS
+import pyttsx3
+import tempfile
 
+# Initialize Flask app
+app = Flask(__name__)
+
+# Directories for uploaded files and outputs
+UPLOAD_FOLDER = "uploads"
+OUTPUT_FOLDER = "outputs"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+# Utility to extract text from PDF
 def extract_text_from_pdf(pdf_path):
-    """Extract text from the provided PDF file."""
     try:
         with open(pdf_path, 'rb') as file:
             reader = PyPDF2.PdfReader(file)
@@ -16,8 +26,13 @@ def extract_text_from_pdf(pdf_path):
     except Exception as e:
         return f"Error: Failed to extract text from PDF. {e}"
 
+# Utility to split text into manageable chunks
+def split_text_into_chunks(text, max_length=5000):
+    """Split text into smaller chunks to handle gTTS limits."""
+    return [text[i:i + max_length] for i in range(0, len(text), max_length)]
+
+# Convert text to audio using pyttsx3
 def text_to_audio_pyttsx3(text, output_path):
-    """Convert text to speech using pyttsx3 and save as an audio file."""
     try:
         engine = pyttsx3.init()
         engine.save_to_file(text, output_path)
@@ -26,20 +41,26 @@ def text_to_audio_pyttsx3(text, output_path):
     except Exception as e:
         return False, f"Error: Failed to convert text to audio with pyttsx3. {e}"
 
+# Convert text to audio using gTTS
 def text_to_audio_gtts(text, output_path):
-    """Convert text to speech using gTTS and save as an audio file."""
     try:
-        tts = gTTS(text=text, lang='en')
-        tts.save(output_path)
+        chunks = split_text_into_chunks(text)
+        with tempfile.TemporaryDirectory() as tempdir:
+            chunk_files = []
+            for i, chunk in enumerate(chunks):
+                chunk_path = os.path.join(tempdir, f"chunk_{i}.mp3")
+                tts = gTTS(text=chunk, lang='en')
+                tts.save(chunk_path)
+                chunk_files.append(chunk_path)
+
+            # Combine chunks into a single audio file
+            with open(output_path, 'wb') as output_file:
+                for chunk_path in chunk_files:
+                    with open(chunk_path, 'rb') as chunk_file:
+                        output_file.write(chunk_file.read())
         return True, output_path
     except Exception as e:
         return False, f"Error: Failed to convert text to audio with gTTS. {e}"
-
-app = Flask(__name__)
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 @app.route('/')
 def index():
